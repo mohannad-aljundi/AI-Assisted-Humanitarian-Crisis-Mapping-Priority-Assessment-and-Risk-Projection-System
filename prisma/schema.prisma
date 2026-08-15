@@ -1,0 +1,718 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum SourceType {
+  OFFICIAL
+  MEDIA
+  NGO
+  SOCIAL
+  FIELD
+  OTHER
+}
+
+enum PriorityLevel {
+  Low
+  Medium
+  High
+  Critical
+}
+
+enum RiskLevel {
+  Low
+  Medium
+  High
+  Critical
+}
+
+enum RiskTrend {
+  Stable
+  Increasing
+  Decreasing
+}
+
+enum NeedSeverity {
+  Low
+  Medium
+  High
+  Critical
+}
+
+enum NeedInferenceSource {
+  Observed
+  Inferred
+}
+
+enum ExtractedEntityType {
+  LOCATION
+  FACILITY
+  INFRASTRUCTURE
+  GEOGRAPHIC
+  CRISIS_TYPE
+  HUMANITARIAN_NEED
+  AFFECTED_POPULATION
+}
+
+enum AgreementLevel {
+  Low
+  Medium
+  High
+}
+
+enum LocationResolutionStatus {
+  VERIFIED
+  COUNTRY_CENTROID
+  LOCATION_PENDING
+  FAILED
+}
+
+enum LocationResolutionMethod {
+  AI
+  DATABASE
+  GEONAMES
+  NOMINATIM
+  COUNTRY_CENTROID
+  MANUAL
+}
+
+enum CorrectionField {
+  PRIORITY
+  RISK
+  RELIABILITY
+  CRISIS_TYPE
+  CONFIDENCE
+  HUMANITARIAN_NEED
+  REPORT_PURPOSE
+  CRISIS_PHASE
+  DISASTER_SEVERITY
+}
+
+enum LearningExampleStatus {
+  PENDING
+  APPLIED
+  REJECTED
+}
+
+enum AlertType {
+  NEW_CRISIS
+  ESCALATION
+  HIGH_PRIORITY
+  CRITICAL_PRIORITY
+  MULTI_SOURCE_CONFIRMATION
+}
+
+enum ReportProcessingStatus {
+  IMPORTED
+  QUEUED
+  ANALYSING
+  INTELLIGENCE_READY
+  FAILED
+}
+
+enum BackgroundJobType {
+  REPORT_ANALYSIS
+  MASTER_INTELLIGENCE
+  CHLE_RECORD
+}
+
+enum BackgroundJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model Source {
+  id               String   @id @default(cuid())
+  name             String
+  type             SourceType
+  credibilityScore Float    @default(0.5)
+  url              String?
+  reports          Report[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Report {
+  id         String   @id @default(cuid())
+  title      String
+  content    String   @db.Text
+  reportDate DateTime
+  sourceId   String
+  source     Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  articleUrl         String?
+  externalArticleId  String?
+  segmentIndex       Int?
+  segmentCountry     String?
+
+  contentFingerprint String?
+  duplicateOfReportId String?
+  fusedSourceCount   Int      @default(1)
+
+  processingStatus   ReportProcessingStatus @default(IMPORTED)
+  processingError    String?                @db.Text
+  incidentLabel      String?
+
+  extractedEntities     ExtractedEntity[]
+  reliabilityAssessment ReliabilityAssessment?
+  priorityAssessment    PriorityAssessment?
+  insight               ReportInsight?
+  crisis                Crisis?
+  learningCase            LearningCase?
+  learningExamples        LearningExample[]
+  analystFeedback         AnalystFeedback[]
+  historicalOutcomes      HistoricalOutcome[]
+  masterIncidentMember    MasterIncidentMember?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sourceId])
+  @@index([reportDate])
+  @@index([articleUrl])
+  @@index([externalArticleId])
+  @@index([processingStatus])
+  @@index([incidentLabel])
+}
+
+model BackgroundJob {
+  id          String              @id @default(cuid())
+  type        BackgroundJobType
+  status      BackgroundJobStatus @default(PENDING)
+  payload     Json
+  attempts    Int                 @default(0)
+  maxAttempts Int                 @default(3)
+  error       String?             @db.Text
+  timingMs    Json?
+  runAfter    DateTime            @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([status, runAfter])
+  @@index([type, status])
+}
+
+model MasterIncident {
+  id                          String   @id @default(cuid())
+  canonicalReportId           String   @unique
+  title                       String
+  summary                     String?  @db.Text
+  crisisType                  String
+  country                     String
+  city                        String
+  latitude                    Float?
+  longitude                   Float?
+
+  supportingReportCount       Int      @default(1)
+  independentSourceCount      Int      @default(1)
+  sourceAgreementPercent      Float    @default(0)
+  timelineConsistency         Float    @default(1)
+  confidenceScore             Float    @default(0.5)
+  evidenceStrength            Float    @default(0.5)
+  correlationVerificationStatus String @default("Pending Review")
+  dynamicPriorityScore        Float    @default(0)
+  dynamicPriorityLevel        PriorityLevel @default(Medium)
+
+  sourceNames                 Json     @default("[]")
+  reportIds                   Json     @default("[]")
+
+  members                     MasterIncidentMember[]
+  intelligence                MasterIncidentIntelligence?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dynamicPriorityScore])
+  @@index([correlationVerificationStatus])
+  @@index([country, city, crisisType])
+  @@index([updatedAt])
+}
+
+model MasterIncidentIntelligence {
+  id                  String         @id @default(cuid())
+  masterIncidentId    String         @unique
+  masterIncident      MasterIncident @relation(fields: [masterIncidentId], references: [id], onDelete: Cascade)
+
+  executiveSummary    String         @db.Text
+  situationAssessment Json
+  humanitarianNeeds   Json
+  evidenceMatrix      Json
+  consensus           Json
+  dynamicPriority     Json
+  priorityReasoning   Json?
+  riskProjection      Json
+  analystNarrative    String         @db.Text
+  timeline            Json
+  sourceReliability   Json
+  confidence          Float
+  verification        String
+  pipelineVersion     String
+  sourceReportIds     Json           @default("[]")
+  memberCountAtAnalysis Int          @default(1)
+  aiModel             String?
+  lastAnalysed        DateTime       @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([pipelineVersion])
+  @@index([lastAnalysed])
+}
+
+model MasterIncidentMember {
+  id               String         @id @default(cuid())
+  masterIncidentId String
+  masterIncident   MasterIncident @relation(fields: [masterIncidentId], references: [id], onDelete: Cascade)
+  reportId         String         @unique
+  report           Report         @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  similarityScore  Float          @default(0)
+  isCanonical      Boolean        @default(false)
+  operationalSyncedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([masterIncidentId])
+}
+
+model ExtractedEntity {
+  id         String              @id @default(cuid())
+  reportId   String
+  report     Report              @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  entityType ExtractedEntityType
+  entitySubtype String?
+  value      String
+  latitude   Float?
+  longitude  Float?
+  severity   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([reportId])
+  @@index([entityType])
+  @@index([entitySubtype])
+}
+
+model Location {
+  id        String  @id @default(cuid())
+  name      String
+  latitude  Float?
+  longitude Float?
+
+  resolutionStatus LocationResolutionStatus @default(VERIFIED)
+  resolutionMethod LocationResolutionMethod?
+  confidenceScore  Float                    @default(0.75)
+  rawLocationText  String?
+
+  crises          Crisis[]
+  crisisLocations CrisisLocation[]
+  riskProjections RiskProjection[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Crisis {
+  id          String @id @default(cuid())
+  crisisType  String
+  description String @db.Text
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  reportId String? @unique
+  report   Report? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+
+  centroidLatitude     Float?
+  centroidLongitude    Float?
+  affectedRadiusMeters Float?
+  boundaryPolygon      Json?
+  regionLabel          String?
+
+  relatedLocations CrisisLocation[]
+  riskProjections  RiskProjection[]
+  humanitarianNeeds HumanitarianNeed[]
+  timelineEvents   CrisisTimelineEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+}
+
+model CrisisLocation {
+  crisisId   String
+  locationId String
+  crisis     Crisis   @relation(fields: [crisisId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([crisisId, locationId])
+  @@index([locationId])
+}
+
+model HumanitarianNeed {
+  id              String               @id @default(cuid())
+  needType        String
+  severity        NeedSeverity
+  source          NeedInferenceSource?
+  evidence        String?
+  reasoning       String?
+  confidenceScore Float?
+  crisisId        String
+  crisis          Crisis               @relation(fields: [crisisId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([crisisId])
+}
+
+model ReliabilityAssessment {
+  id                String @id @default(cuid())
+  reportId          String @unique
+  report            Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sourceScore       Float
+  consistencyScore  Float
+  recencyScore      Float
+  finalScore        Float
+  scoreBreakdown    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PriorityAssessment {
+  id            String        @id @default(cuid())
+  reportId      String        @unique
+  report        Report        @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  severityScore Float
+  priorityLevel PriorityLevel
+  scoreBreakdown Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RiskProjection {
+  id              String    @id @default(cuid())
+  locationId      String
+  location        Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  crisisId        String?
+  crisis          Crisis?   @relation(fields: [crisisId], references: [id], onDelete: SetNull)
+  riskLevel       RiskLevel
+  trend           RiskTrend
+  confidenceScore Float
+  scoreBreakdown  Json?
+  projections     Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([crisisId])
+}
+
+model UserActivity {
+  id        String   @id @default(cuid())
+  action    String
+  timestamp DateTime @default(now())
+
+  @@index([timestamp])
+}
+
+model SourceVerification {
+  id                          String         @id @default(cuid())
+  country                     String
+  city                        String
+  crisisType                  String
+  consensusScore              Float
+  agreementLevel              AgreementLevel
+  sourceAgreementScore        Float
+  informationConsistencyScore Float
+  sourceConsensusPercentage   Float
+  finalConfidenceScore        Float
+  comparedSources             Int
+  sourceNames                 Json
+  reportIds                   Json
+  createdAt                   DateTime       @default(now())
+  updatedAt                   DateTime       @updatedAt
+
+  @@index([country, city, crisisType])
+  @@index([createdAt])
+}
+
+model Alert {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @db.Text
+  country     String
+  city        String
+  crisisType  String
+  riskLevel   RiskLevel
+  alertType   AlertType
+  createdAt   DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([alertType])
+  @@index([riskLevel])
+}
+
+model IngestionSourceHealth {
+  id              String    @id @default(cuid())
+  providerId      String    @unique
+  totalFetched    Int       @default(0)
+  totalSaved      Int       @default(0)
+  duplicatesSkipped  Int       @default(0)
+  failedRequests  Int       @default(0)
+  successfulRuns  Int       @default(0)
+  totalRuns       Int       @default(0)
+  lastSuccessAt   DateTime?
+  lastFailureAt   DateTime?
+  lastError       String?   @db.Text
+  uptimeScore     Float     @default(1.0)
+  reliabilityScore Float    @default(0.8)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model IngestionSyncState {
+  id                   String    @id @default("singleton")
+  lastSyncStartedAt    DateTime?
+  lastSyncCompletedAt  DateTime?
+  lastSuccessfulSyncAt DateTime?
+  nextScheduledSyncAt  DateTime?
+  lastFetchedCount     Int       @default(0)
+  lastAnalysedCount    Int       @default(0)
+  lastSavedCount       Int       @default(0)
+  lastSkippedCount     Int       @default(0)
+  lastUsedSources      Json      @default("[]")
+  lastError            String?   @db.Text
+  isRunning            Boolean   @default(false)
+  backgroundJobsPending Int      @default(0)
+  lastFetchDurationMs  Int?
+  lastSaveDurationMs   Int?
+  lastSyncTiming       Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ReportInsight {
+  id                     String  @id @default(cuid())
+  reportId               String  @unique
+  report                 Report  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sentiment              String?
+  urgencyLevel           String?
+  threatDetected         Boolean @default(false)
+  infrastructureDamage   Boolean @default(false)
+  displacementRisk       Float?
+  foodInsecurityRisk     Float?
+  medicalDemand          Float?
+  fieldConfidences       Json?
+  priorityExplanation    Json?
+  riskExplanation        Json?
+  reliabilityExplanation Json?
+  situationSummary       String? @db.Text
+  extractionMethod       String?
+  aiModel                String?
+  crisisExplanation      String? @db.Text
+  confidenceLevel        String?
+  evidence               Json?
+  confidenceBreakdown    Json?
+  reasoningChain         Json?
+  finalReasoning         Json?
+  priorityReasoning      Json?
+  reliabilityReasoning   Json?
+  riskReasoning          Json?
+  knownFacts             Json?
+  unknownFacts           Json?
+  crossSourceAnalysis    Json?
+  locationReasoning      Json?
+  pipelineVersion        String?
+  disasterSeverity       Json?
+  humanitarianReasoning  Json?
+  analyticalRiskProjection Json?
+  reanalysisReason       String?
+  reanalyzedAt           DateTime?
+  clusterOperational     Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CrisisTimelineEvent {
+  id          String   @id @default(cuid())
+  crisisId    String?
+  crisis      Crisis?  @relation(fields: [crisisId], references: [id], onDelete: Cascade)
+  reportId    String?
+  eventType   String
+  title       String
+  description String   @db.Text
+  occurredAt  DateTime
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([crisisId])
+  @@index([reportId])
+  @@index([occurredAt])
+}
+
+// ============================================================
+// Continuous Humanitarian Learning Engine (CHLE)
+// Append-only learning — never overwrite historical corrections
+// ============================================================
+
+model LearningCase {
+  id                    String         @id @default(cuid())
+  reportId              String         @unique
+  report                Report         @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  title                 String
+  crisisType            String?
+  country               String?
+  city                  String?
+  reportPurpose         String?
+  crisisPhase           String?
+  priorityLevel         PriorityLevel?
+  riskLevel             RiskLevel?
+  reliabilityScore      Float?
+  confidenceLevel       String?
+  humanitarianNeedsJson Json?
+  evidenceJson          Json?
+  contentFingerprint    String?
+  pipelineVersion       String?
+  analystValidated      Boolean        @default(false)
+  validatedAt           DateTime?
+  validatedBy           String?
+  learningExamples      LearningExample[]
+  historicalOutcomes    HistoricalOutcome[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([crisisType])
+  @@index([country, city])
+  @@index([reportPurpose])
+  @@index([crisisPhase])
+  @@index([analystValidated])
+}
+
+model AnalystFeedback {
+  id         String   @id @default(cuid())
+  reportId   String
+  report     Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  analystId  String?
+  summary    String?  @db.Text
+  examples   LearningExample[]
+
+  createdAt DateTime @default(now())
+
+  @@index([reportId])
+  @@index([analystId])
+}
+
+model LearningExample {
+  id              String              @id @default(cuid())
+  reportId        String
+  report          Report              @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  learningCaseId  String?
+  learningCase    LearningCase?       @relation(fields: [learningCaseId], references: [id], onDelete: SetNull)
+  feedbackId      String?
+  feedback        AnalystFeedback?    @relation(fields: [feedbackId], references: [id], onDelete: SetNull)
+  field           CorrectionField
+  originalValue   Json
+  correctedValue  Json
+  reason          String?             @db.Text
+  evidence        String?             @db.Text
+  analystId       String?
+  pipelineVersion String?
+  status          LearningExampleStatus @default(APPLIED)
+  version         Int                 @default(1)
+
+  createdAt DateTime @default(now())
+
+  @@index([reportId])
+  @@index([field])
+  @@index([analystId])
+  @@index([createdAt])
+}
+
+model ReasoningPattern {
+  id               String   @id @default(cuid())
+  patternKey       String   @unique
+  evidencePattern  String
+  inferredOutcome  String
+  outcomeType      String
+  occurrenceCount  Int      @default(1)
+  validationCount  Int      @default(0)
+  confidenceBoost  Float    @default(0)
+  lastSeenAt       DateTime @default(now())
+  sourceReportIds  Json     @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([outcomeType])
+  @@index([occurrenceCount])
+}
+
+model InferenceMemory {
+  id                   String   @id @default(cuid())
+  memoryKey            String   @unique
+  mistakeType          String
+  contextPattern       String
+  incorrectConclusion  String
+  correctConclusion    String
+  reason               String   @db.Text
+  occurrenceCount      Int      @default(1)
+  sourceReportId       String?
+  analystId            String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([mistakeType])
+  @@index([contextPattern])
+}
+
+model ConfidenceCalibration {
+  id          String @id @default(cuid())
+  contextKey  String
+  dimension   String
+  adjustment  Float  @default(0)
+  sampleCount Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([contextKey, dimension])
+  @@index([dimension])
+}
+
+model HistoricalOutcome {
+  id              String        @id @default(cuid())
+  reportId        String?
+  report          Report?       @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  learningCaseId  String?
+  learningCase    LearningCase? @relation(fields: [learningCaseId], references: [id], onDelete: SetNull)
+  crisisId        String?
+  outcomeSummary  String        @db.Text
+  outcomeType     String?
+  validatedBy     String?
+  validatedAt     DateTime      @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([reportId])
+  @@index([learningCaseId])
+}

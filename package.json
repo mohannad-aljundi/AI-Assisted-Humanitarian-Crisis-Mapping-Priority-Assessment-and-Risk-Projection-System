@@ -1,0 +1,47 @@
+{
+  "name": "ai-humanitarian-crisis-mapping",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "worker": "npx tsx scripts/worker.ts",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "validate:ui": "npx --yes tsx scripts/validate-crisis-ui.ts",
+    "chle:backfill": "npx --yes tsx scripts/backfill-chle-learning-cases.ts",
+    "correlation:backfill": "npx --yes tsx scripts/correlation-backfill.ts",
+    "incident-labels:backfill": "npx --yes tsx scripts/backfill-incident-labels.ts",
+    "jobs:retry-failed": "npx --yes tsx scripts/retry-failed-analysis-jobs.ts",
+    "master-intelligence:migrate": "npx --yes tsx scripts/master-incident-intelligence-migrate.ts",
+    "master-intelligence:propagate": "npx --yes tsx scripts/master-incident-propagation.ts",
+    "chle:status": "node scripts/chle-status.mjs",
+    "perf:measure": "node scripts/perf-measure-endpoints.mjs",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@google/genai": "^2.10.0",
+    "@prisma/client": "^6.19.3",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^1.22.0",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/leaflet": "^1.9.21",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "prisma": "^6.19.3",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
